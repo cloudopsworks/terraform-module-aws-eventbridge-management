@@ -30,6 +30,9 @@ locals {
       }
     }
   ]...)
+  target_types = toset([
+    for key, target in local.targets : target.target_type if target.target_type == "ssm"
+  ])
 }
 
 data "aws_caller_identity" "current" {}
