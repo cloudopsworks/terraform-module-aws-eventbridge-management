@@ -12,6 +12,7 @@ resource "aws_cloudwatch_event_target" "ssm" {
     for key, target in local.targets : key => target if target.target_type == "ssm"
   }
   rule      = aws_cloudwatch_event_rule.this[each.value.rule_key].name
+  event_bus_name = aws_cloudwatch_event_rule.this[each.value.rule_key].event_bus_name
   target_id = each.value.target_id
   arn       = aws_ssm_document.ssm_doc[each.key].arn
   #role_arn = ""
