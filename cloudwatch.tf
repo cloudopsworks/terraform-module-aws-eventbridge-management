@@ -24,21 +24,21 @@ resource "aws_cloudwatch_log_group" "this" {
 # CloudWatch Log Delivery Sources for INFO, ERROR, and TRACE logs
 resource "aws_cloudwatch_log_delivery_source" "info_logs" {
   for_each     = local.buses
-  name         = "EventBusSource-${each.value.name}-info-logs"
+  name         = "eventbus-src-${each.value.name}-info-logs"
   log_type     = "INFO_LOGS"
   resource_arn = aws_cloudwatch_event_bus.this[each.key].arn
 }
 
 resource "aws_cloudwatch_log_delivery_source" "error_logs" {
   for_each     = local.buses
-  name         = "EventBusSource-${each.value.name}-error-logs"
+  name         = "eventbus-src-${each.value.name}-error-logs"
   log_type     = "ERROR_LOGS"
   resource_arn = aws_cloudwatch_event_bus.this[each.key].arn
 }
 
 resource "aws_cloudwatch_log_delivery_source" "trace_logs" {
   for_each     = local.buses
-  name         = "EventBusSource-${each.value.name}-trace-logs"
+  name         = "eventbus-src-${each.value.name}-trace-logs"
   log_type     = "TRACE_LOGS"
   resource_arn = aws_cloudwatch_event_bus.this[each.key].arn
 }
@@ -83,7 +83,7 @@ resource "aws_cloudwatch_log_resource_policy" "this" {
 
 resource "aws_cloudwatch_log_delivery_destination" "logs" {
   for_each = local.buses
-  name     = "EventsDeliveryDestination-${each.value.name}-cwlogs"
+  name     = "event-dlvr-dst-${each.value.name}"
   delivery_destination_configuration {
     destination_resource_arn = aws_cloudwatch_log_group.this[each.key].arn
   }
