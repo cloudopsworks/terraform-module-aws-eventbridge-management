@@ -105,6 +105,7 @@ resource "aws_cloudwatch_log_delivery" "logs_error_logs" {
 }
 
 resource "aws_cloudwatch_log_delivery" "logs_trace_logs" {
+  for_each                 = local.buses
   delivery_destination_arn = aws_cloudwatch_log_delivery_destination.logs[each.key].arn
   delivery_source_name     = aws_cloudwatch_log_delivery_source.trace_logs[each.key].name
   depends_on = [
