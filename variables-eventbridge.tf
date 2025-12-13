@@ -7,3 +7,23 @@
 #     Distributed Under Apache v2.0 License
 #
 
+variable "encryption" {
+  description = "Enable encryption for EventBridge resources."
+  type        = any
+  default     = {}
+  nullable    = false
+}
+
+variable "event_buses" {
+  description = "A map of EventBridge bus configurations."
+  type        = any
+  default     = {}
+  nullable    = false
+}
+
+variable "configs" {
+  description = "A map of EventBridge Rules & Target configurations."
+  type        = any
+  default     = {}
+  nullable    = false
+}
