@@ -29,7 +29,7 @@ resource "aws_ssm_document" "ssm_doc" {
     for key, target in local.targets : key => target if target.target_type == "ssm"
   }
   name          = format("%s-%s-%s-ssm-doc", each.value.rule_key, each.value.target_id, local.system_name_short)
-  document_type = try(each.value.target.document_type) != "" ? each.value.target.document_type : "Command"
+  document_type = try(each.value.target.document_type, "") != "" ? each.value.target.document_type : "Command"
   content       = try(jsonencode(each.value.target.content), each.value.target.content)
   tags = merge(
     local.all_tags,

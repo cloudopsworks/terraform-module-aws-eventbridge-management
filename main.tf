@@ -62,7 +62,7 @@ resource "aws_cloudwatch_event_rule" "this" {
   for_each            = local.rules
   name                = each.value.name
   description         = try(each.value.config.description, format("Event Rule for %s", each.key))
-  event_bus_name      = aws_cloudwatch_event_bus.this[each.value.config.event_bus_ref].name
+  event_bus_name      = try(each.value.config.event_bus_ref, "") != "" ? aws_cloudwatch_event_bus.this[each.value.config.event_bus_ref].name : "default"
   event_pattern       = try(jsonencode(each.value.config.event_pattern), each.value.config.event_pattern, null)
   schedule_expression = try(each.value.config.schedule, null)
   state               = try(each.value.config.state, true) ? "ENABLED" : "DISABLED"
