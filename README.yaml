@@ -1,4 +1,4 @@
-name: Terraform Transit Gateway Module
+name: Terraform AWS EventBridge Management Module
 #logo: logo/logo.jpg
 
 license: "APACHE2"
@@ -8,23 +8,205 @@ copyrights:
     url: "https://cloudops.works"
     year: "2024"
 
-github_repo: cloudopsworks/terraform-module-aws-vpc-setup
+github_repo: cloudopsworks/terraform-module-aws-eventbridge-management
 
 description: |-
-  VPC Module for setting up transit gateway with ResourceAccessMananger support.
+  Terraform module to manage Amazon EventBridge at scale: create and configure
+  multiple custom event buses, rules (pattern or schedule), CloudWatch log delivery,
+  optional KMS encryption, and SSM RunCommand targets with the least friction.
 
 # Introduction to the project
-#introduction: |-
-#  This is an introduction.
+introduction: |-
+  This module streamlines EventBridge management across environments:
+  - Creates one or many custom EventBridge buses with per-bus logging and optional dead-letter SNS.
+  - Supports centralized or per-bus KMS encryption (module-managed or user-provided keys).
+  - Declares rules via flexible `configs` maps using either `event_pattern` or `schedule`.
+  - Adds targets; currently `ssm` is supported for EC2 RunCommand via SSM Documents.
+  - Provisions all required CloudWatch Log Delivery resources and IAM roles for SSM targets.
 
 # How to use this project
-#usage: |-
+usage: |-
+  Use with Terragrunt. Define module source and pass inputs. The example below
+  documents every variable inline and shows expected structures.
+
+  ```hcl
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management.git//?ref=vX.Y.Z"
+  }
+
+  inputs = {
+    # -- Core variables (from variables.tf)
+    is_hub   = false                                        # (Optional) Is this a hub deployment? Default: false
+    spoke_def = "001"                                       # (Optional) 3-digit spoke identifier as string. Default: "001"
+
+    org = {                                                 # (Required) Organization details used for naming/tags
+      organization_name = "acme"                            # (Required) Org/company name
+      organization_unit = "platform"                        # (Required) Business unit or tribe
+      environment_type  = "prod"                            # (Required) Environment type: dev|stg|prod|sandbox|... (free-form)
+      environment_name  = "primary"                          # (Required) Environment name: e.g., eu-west-1a|blue|shared
+    }
+
+    extra_tags = {                                          # (Optional) Extra tags added to all resources. Default: {}
+      Owner = "team-platform"
+    }
+
+    # -- EventBridge encryption (from variables-eventbridge.tf)
+    encryption = {                                          # (Optional) Global KMS settings applied when enabled=true. Default: {}
+      enabled         = false                               # (Optional) Create and use module-managed KMS key for buses/logs. Default: false
+      deletion_window = 30                                  # (Optional) KMS key deletion window in days (7-30). Default: 30
+      key_rotation    = true                                # (Optional) Enable KMS rotation. Default: true
+      rotation_period = 90                                  # (Optional) Rotation period in days. Default: 90
+      multi_region    = false                               # (Optional) Multi-Region KMS key. Default: false
+    }
+
+    # -- Event buses map (keys become part of names)
+    event_buses = {                                         # (Optional) Map of bus configs. Default: {}
+      core = {                                              # (Required for custom buses) Arbitrary key; name => core-<sys>-event-bus
+        kms_key_arn    = null                               # (Optional) Existing KMS ARN (ignored if encryption.enabled=true)
+        kms_key_id     = null                               # (Optional) Existing KMS ID  (ignored if encryption.enabled=true)
+        dead_letter_sns = null                              # (Optional) SNS topic ARN for dead-lettering
+        logs = {                                            # (Optional) EventBridge logging config
+          include_detail = "FULL"                           # (Optional) FULL|BASIC. Default: FULL
+          level          = "ERROR"                          # (Optional) ERROR|INFO|TRACE. Default: ERROR
+        }
+        log_retention  = 7                                  # (Optional) Log group retention in days. Default: 7
+        log_kms_key_arn = null                              # (Optional) KMS ARN for log group (ignored if encryption.enabled=true)
+        log_kms_key_id  = null                              # (Optional) KMS ID  for log group (ignored if encryption.enabled=true)
+        tags = {                                            # (Optional) Per-bus extra tags. Default: {}
+          Purpose = "events"
+        }
+      }
+    }
+
+    # -- Rules and targets
+    configs = {                                             # (Optional) Map of rule definitions. Default: {}
+      ec2-state = {
+        description   = "React to EC2 state changes"        # (Optional) Defaults to "Event Rule for <key>"
+        event_bus_ref = "core"                              # (Optional) Ref to event_buses key; default EventBridge "default" if omitted
+        event_pattern = {                                   # (Required if schedule unset) Standard EventBridge pattern
+          source       = ["aws.ec2"]
+          detail-type  = ["EC2 Instance State-change Notification"]
+          detail = {
+            state = ["stopped", "terminated"]
+          }
+        }
+        # schedule       = "rate(5 minutes)"                 # (Required if event_pattern unset) cron(...) or rate(...)
+        state         = true                                 # (Optional) true=>ENABLED, false=>DISABLED. Default: true
+        tags          = { Purpose = "ops" }                 # (Optional)
+
+        targets = [                                         # (Optional) List of targets; supported type: "ssm"
+          {
+            type       = "ssm"                              # (Required) Target type
+            target_id  = "terminate-by-tag"                 # (Required) Unique within the rule
+            document_type = "Command"                       # (Optional) Common: Command|Automation. Default: Command
+            content = {                                     # (Required) SSM document content
+              schemaVersion = "2.2"
+              description   = "Terminate instances by tag"
+              mainSteps = [{
+                action = "aws:runShellScript"
+                name   = "terminate"
+                inputs = { runCommand = ["#!/bin/bash", "echo terminating"] }
+              }]
+            }
+            run_command_targets = [                         # (Optional) EC2 selection via Run Command Targeting
+              { key = "tag:Terminate", values = ["true"] }
+            ]
+            tags = { Name = "terminate-by-tag" }           # (Optional) Tags for created SSM Document
+          }
+        ]
+      }
+    }
+  }
+  ```
 
 # Example usage
-#examples: |-
+examples: |-
+  Minimal Terragrunt using default EventBridge bus and a scheduled rule:
+
+  ```hcl
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management.git//?ref=vX.Y.Z"
+  }
+
+  inputs = {
+    org = {
+      organization_name = "acme"
+      organization_unit = "platform"
+      environment_type  = "dev"
+      environment_name  = "sandbox"
+    }
+
+    configs = {
+      heartbeat = {
+        schedule = "rate(10 minutes)"
+        targets  = []
+      }
+    }
+  }
+  ```
+
+  Advanced Terragrunt with custom bus, KMS, per-bus logging, and SSM target:
+
+  ```hcl
+  terraform {
+    source = "git::https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management.git//?ref=vX.Y.Z"
+  }
+
+  inputs = {
+    org = {
+      organization_name = "acme"
+      organization_unit = "secops"
+      environment_type  = "prod"
+      environment_name  = "primary"
+    }
+
+    encryption = { enabled = true }
+
+    event_buses = {
+      secops = {
+        logs = { include_detail = "FULL", level = "INFO" }
+        log_retention = 14
+      }
+    }
+
+    configs = {
+      ec2-state = {
+        event_bus_ref = "secops"
+        event_pattern = {
+          source = ["aws.ec2"]
+          detail-type = ["EC2 Instance State-change Notification"]
+          detail = { state = ["stopped"] }
+        }
+        targets = [{
+          type      = "ssm"
+          target_id = "notify"
+          content = {
+            schemaVersion = "2.2"
+            description = "Echo message"
+            mainSteps = [{
+              action = "aws:runShellScript"
+              name   = "echo"
+              inputs = { runCommand = ["#!/bin/bash", "echo hello"] }
+            }]
+          }
+        }]
+      }
+    }
+  }
+  ```
 
 # How to get started quickly
-#quickstart: |-
+quickstart: |-
+  1. Create a Terragrunt directory and configure your AWS provider as usual (e.g., via environment variables or a root `provider` block).
+  2. Add a `terragrunt.hcl` using the module source and pass at least the `org` object in `inputs`.
+  3. Optionally, define `event_buses` to create custom buses and `configs` to add rules/targets.
+  4. Run:
+
+     ```bash
+     terragrunt init
+     terragrunt plan
+     terragrunt apply
+     ```
 
 include:
   - "docs/targets.md"
