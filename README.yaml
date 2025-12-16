@@ -100,7 +100,7 @@ usage: |-
             type       = "ssm"                              # (Required) Target type
             target_id  = "terminate-by-tag"                 # (Required) Unique within the rule
             document_type = "Command"                       # (Optional) Common: Command|Automation. Default: Command
-            version_name  = null                             # (Optional) SSM document version name. Default: null
+            version  = null                             # (Optional) SSM document version name. Default: null
             content = {                                     # (Required) SSM document content
               schemaVersion = "2.2"
               description   = "Terminate instances by tag"
@@ -183,7 +183,7 @@ examples: |-
           type      = "ssm"
           target_id = "notify"
           document_type = "Command"
-          version_name  = null
+          version  = null
           content = {
             schemaVersion = "2.2"
             description = "Echo message"

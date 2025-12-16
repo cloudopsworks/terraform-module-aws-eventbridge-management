@@ -72,7 +72,7 @@ variable "event_buses" {
 #       - type: "ssm"                      # (Required) Target type. Supported values: ssm
 #         target_id: "terminate-by-tag"    # (Required) Unique ID for the target within the rule
 #         document_type: "Command"         # (Optional, ssm) SSM Document type. Allowed: Command | Automation. Default: Command
-#         version_name: null               # (Optional, ssm) Optional SSM Document version name. Default: null
+#         version: null               # (Optional, ssm) Optional SSM Document version name. Default: null
 #         content:                          # (Required, ssm) SSM Document content (object or JSON string)
 #           schemaVersion: "2.2"
 #           description: "Terminate instances by tag"
