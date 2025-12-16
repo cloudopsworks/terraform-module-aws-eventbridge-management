@@ -64,7 +64,8 @@ data "aws_iam_policy_document" "ssm_lifecycle" {
   statement {
     effect = "Allow"
     actions = [
-      "ssm:SendCommand"
+      "ssm:SendCommand",
+      "ssm:StartAutomationExecution",
     ]
     resources = [
       "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:instance/*"
@@ -79,7 +80,8 @@ data "aws_iam_policy_document" "ssm_lifecycle" {
   statement {
     effect = "Allow"
     actions = [
-      "ssm:SendCommand"
+      "ssm:SendCommand",
+      "ssm:StartAutomationExecution",
     ]
     resources = [
       for doc in aws_ssm_document.ssm_doc : doc.arn
