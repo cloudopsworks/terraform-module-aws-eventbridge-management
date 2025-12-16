@@ -36,7 +36,7 @@ resource "aws_ssm_document" "ssm_doc" {
   name           = format("%s-%s-%s-ssm-doc", each.value.rule_key, each.value.target_id, local.system_name_short)
   document_type  = try(each.value.target.document_type, "") != "" ? each.value.target.document_type : "Command"
   content        = try(jsonencode(each.value.target.content), each.value.target.content)
-  latest_version = true
+  version_name   = try(each.value.target.version_name, null)
   tags = merge(
     local.all_tags,
     try(each.value.target.tags, {}),

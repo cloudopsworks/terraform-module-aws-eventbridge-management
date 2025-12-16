@@ -58,6 +58,7 @@ This module streamlines EventBridge management across environments:
 - Declares rules via flexible `configs` maps using either `event_pattern` or `schedule`.
 - Adds targets; currently `ssm` is supported for EC2 RunCommand via SSM Documents.
 - Provisions all required CloudWatch Log Delivery resources and IAM roles for SSM targets.
+- Naming is deterministic: resources include `<system_name_short>` for uniqueness across environments.
 
 ## Usage
 
@@ -76,14 +77,14 @@ terraform {
 
 inputs = {
   # -- Core variables (from variables.tf)
-  is_hub   = false                                        # (Optional) Is this a hub deployment? Default: false
-  spoke_def = "001"                                       # (Optional) 3-digit spoke identifier as string. Default: "001"
+  is_hub    = false                                       # (Optional) Is this a hub deployment? Default: false
+  spoke_def = "001"                                       # (Optional) 3-digit spoke identifier as string (000-999). Default: "001"
 
   org = {                                                 # (Required) Organization details used for naming/tags
-    organization_name = "acme"                            # (Required) Org/company name
-    organization_unit = "platform"                        # (Required) Business unit or tribe
-    environment_type  = "prod"                            # (Required) Environment type: dev|stg|prod|sandbox|... (free-form)
-    environment_name  = "primary"                          # (Required) Environment name: e.g., eu-west-1a|blue|shared
+    organization_name = "acme"                           # (Required) Org/company name
+    organization_unit = "platform"                       # (Required) Business unit or tribe
+    environment_type  = "prod"                           # (Required) Environment type: dev|stg|prod|sandbox|... (free-form)
+    environment_name  = "primary"                        # (Required) Environment name: e.g., eu-west-1a|blue|shared
   }
 
   extra_tags = {                                          # (Optional) Extra tags added to all resources. Default: {}
@@ -93,23 +94,23 @@ inputs = {
   # -- EventBridge encryption (from variables-eventbridge.tf)
   encryption = {                                          # (Optional) Global KMS settings applied when enabled=true. Default: {}
     enabled         = false                               # (Optional) Create and use module-managed KMS key for buses/logs. Default: false
-    deletion_window = 30                                  # (Optional) KMS key deletion window in days (7-30). Default: 30
+    deletion_window = 30                                  # (Optional) KMS key deletion window in days. Allowed: 7-30. Default: 30
     key_rotation    = true                                # (Optional) Enable KMS rotation. Default: true
-    rotation_period = 90                                  # (Optional) Rotation period in days. Default: 90
+    rotation_period = 90                                  # (Optional) Rotation period in days (if supported). Default: 90
     multi_region    = false                               # (Optional) Multi-Region KMS key. Default: false
   }
 
   # -- Event buses map (keys become part of names)
   event_buses = {                                         # (Optional) Map of bus configs. Default: {}
     core = {                                              # (Required for custom buses) Arbitrary key; name => core-<sys>-event-bus
-      kms_key_arn    = null                               # (Optional) Existing KMS ARN (ignored if encryption.enabled=true)
-      kms_key_id     = null                               # (Optional) Existing KMS ID  (ignored if encryption.enabled=true)
-      dead_letter_sns = null                              # (Optional) SNS topic ARN for dead-lettering
-      logs = {                                            # (Optional) EventBridge logging config
-        include_detail = "FULL"                           # (Optional) FULL|BASIC. Default: FULL
-        level          = "ERROR"                          # (Optional) ERROR|INFO|TRACE. Default: ERROR
+      kms_key_arn     = null                              # (Optional) Existing KMS ARN (ignored if encryption.enabled=true)
+      kms_key_id      = null                              # (Optional) Existing KMS ID  (ignored if encryption.enabled=true)
+      dead_letter_sns = null                              # (Optional) SNS topic ARN for dead-lettering. Default: null
+      logs = {                                            # (Optional) EventBridge logging config. Default: {FULL/ERROR}
+        include_detail = "FULL"                           # (Optional) Allowed: FULL|BASIC. Default: FULL
+        level          = "ERROR"                          # (Optional) Allowed: ERROR|INFO|TRACE. Default: ERROR
       }
-      log_retention  = 7                                  # (Optional) Log group retention in days. Default: 7
+      log_retention   = 7                                  # (Optional) Log group retention in days (1,3,5,7,14,30,90,120,180,365,...). Default: 7
       log_kms_key_arn = null                              # (Optional) KMS ARN for log group (ignored if encryption.enabled=true)
       log_kms_key_id  = null                              # (Optional) KMS ID  for log group (ignored if encryption.enabled=true)
       tags = {                                            # (Optional) Per-bus extra tags. Default: {}
@@ -131,7 +132,7 @@ inputs = {
         }
       }
       # schedule       = "rate(5 minutes)"                 # (Required if event_pattern unset) cron(...) or rate(...)
-      state         = true                                 # (Optional) true=>ENABLED, false=>DISABLED. Default: true
+      state          = true                                # (Optional) true=>ENABLED, false=>DISABLED. Default: true
       tags          = { Purpose = "ops" }                 # (Optional)
 
       targets = [                                         # (Optional) List of targets; supported type: "ssm"
@@ -139,6 +140,7 @@ inputs = {
           type       = "ssm"                              # (Required) Target type
           target_id  = "terminate-by-tag"                 # (Required) Unique within the rule
           document_type = "Command"                       # (Optional) Common: Command|Automation. Default: Command
+          version_name  = null                             # (Optional) SSM document version name. Default: null
           content = {                                     # (Required) SSM document content
             schemaVersion = "2.2"
             description   = "Terminate instances by tag"
@@ -234,6 +236,8 @@ inputs = {
       targets = [{
         type      = "ssm"
         target_id = "notify"
+        document_type = "Command"
+        version_name  = null
         content = {
           schemaVersion = "2.2"
           description = "Echo message"
