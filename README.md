@@ -105,7 +105,7 @@ inputs = {
     core = {                                              # (Required for custom buses) Arbitrary key; name => core-<sys>-event-bus
       kms_key_arn     = null                              # (Optional) Existing KMS ARN (ignored if encryption.enabled=true)
       kms_key_id      = null                              # (Optional) Existing KMS ID  (ignored if encryption.enabled=true)
-      dead_letter_sns = null                              # (Optional) SNS topic ARN for dead-lettering. Default: null
+      dead_letter_sqs = null                              # (Optional) SNS topic ARN for dead-lettering. Default: null
       logs = {                                            # (Optional) EventBridge logging config. Default: {FULL/ERROR}
         include_detail = "FULL"                           # (Optional) Allowed: FULL|BASIC. Default: FULL
         level          = "ERROR"                          # (Optional) Allowed: ERROR|INFO|TRACE. Default: ERROR
