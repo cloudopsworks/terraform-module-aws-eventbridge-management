@@ -9,6 +9,10 @@
 
 locals {
   ssm_enabled = contains(local.target_types, "ssm")
+  target_dlq_arns = [
+    for key, target in local.targets : target.target.dead_letter_sqs
+    if target.target_type == "ssm" && try(target.target.dead_letter_sqs, "") != ""
+  ]
 }
 
 resource "aws_cloudwatch_event_target" "ssm" {
@@ -95,6 +99,17 @@ data "aws_iam_policy_document" "ssm_lifecycle" {
   }
 }
 
+data "aws_iam_policy_document" "ssm_lifecycle_dlq" {
+  count = local.ssm_enabled && length(local.target_dlq_arns) > 0 ? 1 : 0
+  statement {
+    effect = "Allow"
+    actions = [
+      "sqs:SendMessage",
+    ]
+    resources = local.target_dlq_arns
+  }
+}
+
 resource "aws_iam_role" "ssm_lifecycle" {
   count              = local.ssm_enabled ? 1 : 0
   name               = "${local.system_name}-eventbridge-ssm-role"
@@ -108,4 +123,9 @@ resource "aws_iam_role_policy" "ssm_lifecycle" {
   policy = data.aws_iam_policy_document.ssm_lifecycle[0].json
 }
 
-
+resource "aws_iam_role_policy" "ssm_lifecycle_dlq" {
+  count  = local.ssm_enabled && length(local.target_dlq_arns) > 0 ? 1 : 0
+  name   = "SQSDLQLifecycle"
+  role   = aws_iam_role.ssm_lifecycle[0].id
+  policy = data.aws_iam_policy_document.ssm_lifecycle_dlq[0].json
+}
