@@ -31,7 +31,7 @@ variable "encryption" {
 #   <bus_key>:                             # (Required for custom buses) Arbitrary key used in naming.
 #     kms_key_arn: "arn:aws:kms:..."      # (Optional) Existing KMS key ARN for this bus (ignored if encryption.enabled=true)
 #     kms_key_id: "1234abcd-..."          # (Optional) Existing KMS key ID for this bus (ignored if encryption.enabled=true)
-#     dead_letter_sns: "arn:aws:sns:..."  # (Optional) SNS topic ARN for dead-letter queueing of failed event deliveries. Default: null
+#     dead_letter_sqs: "arn:aws:sns:..."  # (Optional) SNS topic ARN for dead-letter queueing of failed event deliveries. Default: null
 #     logs:                                # (Optional) EventBridge logging configuration for this bus. Default: { include_detail = "FULL", level = "ERROR" }
 #       include_detail: "FULL"            # (Optional) Allowed: FULL | BASIC. Default: FULL
 #       level: "ERROR"                    # (Optional) Allowed: ERROR | INFO | TRACE. Default: ERROR

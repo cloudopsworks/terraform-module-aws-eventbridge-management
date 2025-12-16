@@ -43,9 +43,9 @@ resource "aws_cloudwatch_event_bus" "this" {
   description        = format("Event Bus for %s", each.key)
   kms_key_identifier = try(var.encryption.enabled, false) ? aws_kms_key.this[0].arn : try(each.value.config.kms_key_arn, each.value.config.kms_key_id, null)
   dynamic "dead_letter_config" {
-    for_each = try(each.value.config.dead_letter_sns, "") != "" ? [1] : []
+    for_each = try(each.value.config.dead_letter_sqs, "") != "" ? [1] : []
     content {
-      arn = try(each.value.config.dead_letter_sns, null)
+      arn = try(each.value.config.dead_letter_sqs, null)
     }
   }
   log_config {
