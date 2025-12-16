@@ -20,6 +20,12 @@ resource "aws_cloudwatch_event_target" "ssm" {
   target_id      = each.value.target_id
   arn            = aws_ssm_document.ssm_doc[each.key].arn
   role_arn       = aws_iam_role.ssm_lifecycle[0].arn
+  dynamic "dead_letter_config" {
+    for_each = try(each.value.target.dead_letter_sns, "") != "" ? [1] : []
+    content {
+      arn = try(each.value.target.dead_letter_sns, null)
+    }
+  }
   dynamic "run_command_targets" {
     for_each = try(each.value.target.run_command_targets, [])
     content {
