@@ -1,5 +1,5 @@
 ##
-# (c) 2021-2025
+# (c) 2021-2026
 #     Cloud Ops Works LLC - https://cloudops.works/
 #     Find us on:
 #       GitHub: https://github.com/cloudopsworks
@@ -10,8 +10,8 @@
 locals {
   ssm_enabled = contains(local.target_types, "ssm")
   target_dlq_arns = [
-    for key, target in local.targets : target.target.dead_letter_sqs
-    if target.target_type == "ssm" && try(target.target.dead_letter_sqs, "") != ""
+    for key, target in local.targets : try(target.target.dead_letter_sqs, null)
+    if target.target_type == "ssm" && try(target.target.dead_letter_sqs, null) != null && try(target.target.dead_letter_sqs, "") != ""
   ]
 }
 
@@ -25,13 +25,13 @@ resource "aws_cloudwatch_event_target" "ssm" {
   arn            = aws_ssm_document.ssm_doc[each.key].arn
   role_arn       = aws_iam_role.ssm_lifecycle[0].arn
   dynamic "dead_letter_config" {
-    for_each = try(each.value.target.dead_letter_sqs, "") != "" ? [1] : []
+    for_each = try(each.value.target.dead_letter_sqs, null) != null && try(each.value.target.dead_letter_sqs, "") != "" ? [1] : []
     content {
       arn = try(each.value.target.dead_letter_sqs, null)
     }
   }
   dynamic "run_command_targets" {
-    for_each = try(each.value.target.run_command_targets, [])
+    for_each = try(each.value.target.run_command_targets[*], [])
     content {
       key    = run_command_targets.value.key
       values = run_command_targets.value.values
@@ -44,9 +44,9 @@ resource "aws_ssm_document" "ssm_doc" {
     for key, target in local.targets : key => target if target.target_type == "ssm"
   }
   name            = format("%s-%s-%s-ssm-doc", each.value.rule_key, each.value.target_id, local.system_name_short)
-  document_type   = try(each.value.target.document_type, "") != "" ? each.value.target.document_type : "Command"
-  content         = try(jsonencode(each.value.target.content), each.value.target.content)
-  document_format = try(each.value.target.format, "JSON")
+  document_type   = try(each.value.target.document_type, null) != null && try(each.value.target.document_type, "") != "" ? each.value.target.document_type : "Command"
+  content         = try(tostring(each.value.target.content), jsonencode(each.value.target.content))
+  document_format = try(each.value.target.format, null) != null && try(each.value.target.format, "") != "" ? each.value.target.format : "JSON"
   version_name    = try(each.value.target.version, null)
   tags = merge(
     local.all_tags,
@@ -78,7 +78,7 @@ data "aws_iam_policy_document" "ssm_lifecycle" {
       "ssm:StartAutomationExecution",
     ]
     resources = [
-      "arn:aws:ec2:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:instance/*"
+      "arn:aws:ec2:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:instance/*"
     ]
     # condition {
     #   test     = "StringEquals"

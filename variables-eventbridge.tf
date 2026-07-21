@@ -1,5 +1,5 @@
 ##
-# (c) 2021-2025
+# (c) 2021-2026
 #     Cloud Ops Works LLC - https://cloudops.works/
 #     Find us on:
 #       GitHub: https://github.com/cloudopsworks
@@ -95,6 +95,81 @@ variable "event_buses" {
 # - For SSM targets, the module creates: aws_ssm_document, aws_cloudwatch_event_target, and an IAM role/policy (once per module) to allow events to call SSM.
 variable "configs" {
   description = "A map of EventBridge Rules & Target configurations."
+  type        = any
+  default     = {}
+  nullable    = false
+}
+## YAML reference for `scheduler_groups`
+# scheduler_groups:                       # (Optional) Map of EventBridge Scheduler schedule group definitions. Default: {}
+#   <group_key>:                           # (Required for groups) Arbitrary key used by schedulers.<key>.group_ref.
+#     name: "ops-jobs"                    # (Optional) Explicit group name. Default: <group_key>-<system_name_short>-scheduler-group
+#     tags:                                # (Optional) Extra tags merged into the schedule group. Default: {}
+#       Purpose: "scheduled-jobs"
+#
+# Behavior:
+# - If `name` is omitted, each group is named `<group_key>-<system_name_short>-scheduler-group`.
+# - Schedules can reference a managed group by setting `schedulers.*.group_ref` to the group key.
+# - If no group_ref or group_name is provided on a schedule, AWS default schedule group `default` is used.
+variable "scheduler_groups" {
+  description = "A map of EventBridge Scheduler schedule group configurations."
+  type        = any
+  default     = {}
+  nullable    = false
+}
+
+## YAML reference for `schedulers`
+# schedulers:                             # (Optional) Map of EventBridge Scheduler schedule definitions. Default: {}
+#   <schedule_key>:                        # (Required for schedules) Arbitrary key used in naming and outputs.
+#     name: "nightly-maintenance"         # (Optional) Explicit schedule name. Default: <schedule_key>-<system_name_short>-scheduler
+#     description: "Run nightly job"      # (Optional) Schedule description. Default: "EventBridge Scheduler schedule for <schedule_key>"
+#     group_ref: "ops"                    # (Optional) Key from scheduler_groups to use for group_name. Conflicts logically with group_name.
+#     group_name: "default"               # (Optional) Existing Scheduler group name. Default: default
+#     schedule_expression: "cron(0 2 * * ? *)" # (Required) Schedule expression: at(...), rate(...), or cron(...)
+#     schedule_expression_timezone: "UTC" # (Optional) IANA timezone used to evaluate schedule_expression. Default: UTC
+#     state: true                          # (Optional) true/ENABLED to enable, false/DISABLED to disable. Default: true
+#     start_date: null                     # (Optional) UTC timestamp after which recurring schedules can invoke targets. Example: 2030-01-01T01:00:00Z
+#     end_date: null                       # (Optional) UTC timestamp before which recurring schedules can invoke targets. Example: 2030-12-31T23:59:59Z
+#     action_after_completion: "NONE"     # (Optional) Valid values: NONE | DELETE. Default: provider default NONE
+#     kms_key_arn: null                    # (Optional) Customer-managed KMS key ARN for Scheduler data. Ignored when encryption.enabled=true.
+#     flexible_time_window:                # (Optional) Invocation window. Default: { mode = "OFF" }
+#       mode: "OFF"                       # (Required by AWS) Valid values: OFF | FLEXIBLE. Default: OFF
+#       maximum_window_in_minutes: null    # (Optional) Required when mode=FLEXIBLE. Valid range: 1-1440 minutes.
+#     target:                              # (Required) Target invoked by EventBridge Scheduler.
+#       arn: "arn:aws:scheduler:::aws-sdk:sqs:sendMessage" # (Required) Target ARN or universal target service ARN.
+#       role_arn: "arn:aws:iam::123456789012:role/scheduler-exec" # (Required) IAM role assumed by Scheduler.
+#       input: {}                          # (Optional) String or object JSON payload passed to the target. Default: null
+#       dead_letter_sqs: null              # (Optional) SQS DLQ ARN shorthand. Default: null
+#       dead_letter_config:                # (Optional) SQS DLQ configuration; use instead of dead_letter_sqs for provider-shaped input.
+#         arn: "arn:aws:sqs:..."          # (Required if block is set) DLQ queue ARN.
+#       retry_policy:                      # (Optional) Target retry behavior. Default: AWS provider defaults
+#         maximum_event_age_in_seconds: 86400 # (Optional) Valid range: 60-86400. Default: 86400
+#         maximum_retry_attempts: 185      # (Optional) Valid range: 0-185. Default: 185
+#       sqs_parameters:                    # (Optional) SQS target parameters.
+#         message_group_id: "default"     # (Optional) FIFO message group ID.
+#       eventbridge_parameters:            # (Optional) EventBridge PutEvents target parameters.
+#         detail_type: "MaintenanceJob"   # (Required if block is set) Event detail type.
+#         source: "custom.maintenance"    # (Required if block is set) Event source.
+#       kinesis_parameters:                # (Optional) Kinesis target parameters.
+#         partition_key: "job-key"        # (Required if block is set) Kinesis partition key.
+#       ecs_parameters:                    # (Optional) ECS RunTask target parameters.
+#         task_definition_arn: "arn:aws:ecs:...:task-definition/job:1" # (Required if block is set) Task definition ARN.
+#         launch_type: "FARGATE"          # (Optional) Valid values: EC2 | FARGATE | EXTERNAL.
+#         task_count: 1                    # (Optional) Number of tasks. Valid range: 1-10. Default: 1
+#         network_configuration:           # (Optional) ECS task network configuration.
+#           assign_public_ip: false        # (Optional) Assign public IP for Fargate. Default: false
+#           security_groups: []            # (Optional) Security group IDs, 1-5 values.
+#           subnets: []                    # (Optional) Subnet IDs, 1-16 values.
+#       sagemaker_pipeline_parameters:     # (Optional) SageMaker pipeline target parameters.
+#         pipeline_parameter:              # (Optional) List of SageMaker pipeline parameters, up to 200.
+#           - name: "Environment"         # (Required) Pipeline parameter name.
+#             value: "prod"               # (Required) Pipeline parameter value.
+#
+# Behavior:
+# - Each schedule will be named `<schedule_key>-<system_name_short>-scheduler` unless `name` is provided.
+# - The module manages Scheduler groups and schedules separately from EventBridge Rules in `configs`.
+# - `target.role_arn` must allow `scheduler.amazonaws.com` to assume it and invoke the selected target.
+variable "schedulers" {
+  description = "A map of EventBridge Scheduler schedule configurations."
   type        = any
   default     = {}
   nullable    = false
