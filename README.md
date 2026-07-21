@@ -12,12 +12,13 @@
 
 # Terraform AWS EventBridge Management Module
 
+ [![Latest Release](https://img.shields.io/github/release/cloudopsworks/terraform-module-aws-eventbridge-management.svg?style=for-the-badge)](https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management/releases/latest) [![Last Updated](https://img.shields.io/github/last-commit/cloudopsworks/terraform-module-aws-eventbridge-management.svg?style=for-the-badge)](https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management/commits)
 
 
-
-Terraform module to manage Amazon EventBridge at scale: create and configure
-multiple custom event buses, rules (pattern or schedule), CloudWatch log delivery,
-optional KMS encryption, and SSM RunCommand targets with the least friction.
+Terraform module to manage Amazon EventBridge at scale: custom event buses,
+EventBridge rules and targets, EventBridge Scheduler schedule groups and
+schedules, CloudWatch log delivery, optional KMS encryption, and SSM
+RunCommand targets.
 
 
 ---
@@ -47,13 +48,14 @@ We have [*lots of terraform modules*][terraform_modules] that are Open Source an
 
 ## Introduction
 
-This module streamlines EventBridge management across environments:
-- Creates one or many custom EventBridge buses with per-bus logging and optional dead-letter SNS.
-- Supports centralized or per-bus KMS encryption (module-managed or user-provided keys).
-- Declares rules via flexible `configs` maps using either `event_pattern` or `schedule`.
-- Adds targets; currently `ssm` is supported for EC2 RunCommand via SSM Documents.
-- Provisions all required CloudWatch Log Delivery resources and IAM roles for SSM targets.
-- Naming is deterministic: resources include `<system_name_short>` for uniqueness across environments.
+This module streamlines EventBridge operations across environments:
+- Creates one or many custom EventBridge buses with per-bus logging and optional dead-letter SQS.
+- Supports centralized or per-resource KMS encryption for buses, logs, and Scheduler schedules.
+- Declares EventBridge Rules via flexible `configs` maps using either `event_pattern` or `schedule`.
+- Adds EventBridge Rule targets; currently `ssm` is supported for EC2 RunCommand via SSM Documents.
+- Manages EventBridge Scheduler schedule groups and schedules through `scheduler_groups` and `schedulers`.
+- Supports Scheduler target options for universal targets, SQS, EventBridge, Kinesis, ECS, SageMaker, DLQ, and retry policies.
+- Uses deterministic names containing `<system_name_short>` unless an explicit Scheduler name is supplied.
 
 ## Usage
 
@@ -62,190 +64,255 @@ This module streamlines EventBridge management across environments:
 Instead pin to the release tag (e.g. `?ref=vX.Y.Z`) of one of our [latest releases](https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management/releases).
 
 
-Use with Terragrunt. Define module source and pass inputs. The example below
-documents every variable inline and shows expected structures.
+Use the Terragrunt scaffold workflow so each deployment gets the module's generated `terragrunt.hcl`, `inputs.yaml`, and `local-tags.json` files.
+
+```sh
+# 1. Create and enter the target deployment directory
+mkdir -p live/dev/us-east-1/platform/eventbridge-management
+cd live/dev/us-east-1/platform/eventbridge-management
+
+# 2. Scaffold the module (do NOT use --working-dir)
+terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-eventbridge-management
+
+# 3. Edit inputs.yaml with deployment-specific values
+#    (all keys and comments are pre-populated from .boilerplate/inputs.yaml)
+vi inputs.yaml
+
+# 4. Apply
+terragrunt apply
+```
+
+Generated `inputs.yaml`:
+
+```yaml
+# Module configuration
+
+encryption: {} # (Optional) Global KMS settings applied when enabled=true. Default: {}
+# encryption:
+#   enabled: false        # (Optional) Enable module-managed KMS for EventBridge buses, logs, and Scheduler schedules. Default: false
+#   deletion_window: 30   # (Optional) KMS key deletion window in days. Allowed values: 7-30. Default: 30
+#   key_rotation: true    # (Optional) Enable automatic key rotation. Default: true
+#   rotation_period: 90   # (Optional) Rotation period in days when supported by AWS. Default: 90
+#   multi_region: false   # (Optional) Create a multi-Region KMS key. Default: false
+
+event_buses: {} # (Optional) Map of EventBridge custom event bus definitions. Default: {}
+# event_buses:
+#   core:                                      # (Required for custom buses) Arbitrary key; name becomes core-<system_name_short>-event-bus.
+#     kms_key_arn: null                       # (Optional) Existing KMS key ARN for this bus; ignored if encryption.enabled=true. Default: null
+#     kms_key_id: null                        # (Optional) Existing KMS key ID for this bus; ignored if encryption.enabled=true. Default: null
+#     dead_letter_sqs: null                   # (Optional) Dead-letter SQS queue ARN for failed event deliveries. Default: null
+#     logs:                                   # (Optional) EventBridge logging configuration. Default: include_detail=FULL, level=ERROR
+#       include_detail: "FULL"                # (Optional) Valid values: FULL | BASIC. Default: FULL
+#       level: "ERROR"                        # (Optional) Valid values: ERROR | INFO | TRACE. Default: ERROR
+#     log_retention: 7                        # (Optional) CloudWatch Log Group retention in days. Default: 7
+#     log_kms_key_arn: null                   # (Optional) Existing KMS ARN for this bus log group; ignored if encryption.enabled=true. Default: null
+#     log_kms_key_id: null                    # (Optional) Existing KMS key ID for this bus log group; ignored if encryption.enabled=true. Default: null
+#     tags: {}                                # (Optional) Extra tags merged into this bus resources. Default: {}
+
+configs: {} # (Optional) Map of EventBridge Rule definitions and targets. Default: {}
+# configs:
+#   ec2-state:                                # (Required for rules) Arbitrary key; name becomes ec2-state-<system_name_short>-rule.
+#     description: "React to EC2 state changes" # (Optional) Rule description. Default: Event Rule for <rule_key>
+#     event_bus_ref: "core"                  # (Optional) Key from event_buses. Default: AWS default event bus
+#     event_pattern:                          # (Required if schedule unset) EventBridge event pattern object or JSON string.
+#       source: ["aws.ec2"]                  # (Optional) Example event source matcher.
+#       detail-type: ["EC2 Instance State-change Notification"] # (Optional) Example event detail-type matcher.
+#       detail:                               # (Optional) Example event detail matcher.
+#         state: ["stopped", "terminated"]
+#     schedule: null                          # (Required if event_pattern unset) EventBridge Rule schedule expression: cron(...) or rate(...). Default: null
+#     state: true                             # (Optional) true enables the rule, false disables it. Default: true
+#     tags: {}                                # (Optional) Extra tags for this rule. Default: {}
+#     targets:                                # (Optional) List of targets for this rule. Default: []
+#       - type: "ssm"                         # (Required) Target type. Supported values: ssm
+#         target_id: "terminate-by-tag"       # (Required) Unique target ID within the rule.
+#         document_type: "Command"            # (Optional) SSM Document type. Valid values include Command | Automation. Default: Command
+#         version: null                       # (Optional) SSM Document version name. Default: null
+#         format: "JSON"                      # (Optional) SSM Document format. Valid values: JSON | YAML | TEXT. Default: JSON
+#         content: {}                         # (Required for ssm) SSM Document content as object or string.
+#         dead_letter_sqs: null               # (Optional) SQS DLQ ARN for EventBridge target delivery failures. Default: null
+#         run_command_targets: []             # (Optional) EC2 Run Command target selectors. Default: []
+#         # run_command_targets:
+#         #   - key: "tag:Terminate"          # (Required if item is set) Target selector key, e.g. InstanceIds or tag:<Name>.
+#         #     values: ["true"]              # (Required if item is set) Target selector values.
+#         tags: {}                            # (Optional) Tags for the created SSM Document. Default: {}
+
+scheduler_groups: {} # (Optional) Map of EventBridge Scheduler schedule group definitions. Default: {}
+# scheduler_groups:
+#   ops:                                      # (Required for groups) Arbitrary key used by schedulers.*.group_ref.
+#     name: null                             # (Optional) Explicit schedule group name. Default: ops-<system_name_short>-scheduler-group
+#     tags: {}                               # (Optional) Extra tags merged into the schedule group. Default: {}
+
+schedulers: {} # (Optional) Map of EventBridge Scheduler schedule definitions. Default: {}
+# schedulers:
+#   nightly-maintenance:                     # (Required for schedules) Arbitrary key used in naming and outputs.
+#     name: null                             # (Optional) Explicit schedule name. Default: nightly-maintenance-<system_name_short>-scheduler
+#     description: "Run nightly maintenance" # (Optional) Schedule description. Default: EventBridge Scheduler schedule for <schedule_key>
+#     group_ref: "ops"                       # (Optional) Key from scheduler_groups. Use this for module-managed groups. Default: null
+#     group_name: null                       # (Optional) Existing Scheduler group name. Default: default when group_ref is unset
+#     schedule_expression: "cron(0 2 * * ? *)" # (Required) Schedule expression: at(...), rate(...), or cron(...).
+#     schedule_expression_timezone: "UTC"    # (Optional) IANA timezone for schedule_expression evaluation. Default: UTC
+#     state: true                            # (Optional) true/ENABLED enables, false/DISABLED disables. Default: true
+#     start_date: null                       # (Optional) UTC timestamp after which recurring schedules can start. Default: null
+#     end_date: null                         # (Optional) UTC timestamp before which recurring schedules can invoke. Default: null
+#     action_after_completion: null          # (Optional) Valid values: NONE | DELETE. Default: provider default NONE
+#     kms_key_arn: null                      # (Optional) Customer-managed KMS key ARN; ignored if encryption.enabled=true. Default: null
+#     flexible_time_window:                  # (Optional) Invocation time window. Default: mode=OFF
+#       mode: "OFF"                          # (Optional) Valid values: OFF | FLEXIBLE. Default: OFF
+#       maximum_window_in_minutes: null      # (Optional) Required when mode=FLEXIBLE. Valid range: 1-1440. Default: null
+#     target:                                # (Required) Target invoked by Scheduler.
+#       arn: "arn:aws:scheduler:::aws-sdk:sqs:sendMessage" # (Required) Target ARN or universal target service ARN.
+#       role_arn: "arn:aws:iam::123456789012:role/scheduler-exec" # (Required) Execution role ARN trusted by scheduler.amazonaws.com.
+#       input: {}                            # (Optional) String or object JSON payload. Default: null
+  #       dead_letter_sqs: null                # (Optional) SQS DLQ ARN shorthand. Default: null
+#       retry_policy:                        # (Optional) Retry behavior. Default: AWS provider defaults
+#         maximum_event_age_in_seconds: 86400 # (Optional) Valid range: 60-86400. Default: 86400
+#         maximum_retry_attempts: 185        # (Optional) Valid range: 0-185. Default: 185
+#       sqs_parameters:                      # (Optional) SQS target parameters. Default: null
+#         message_group_id: null             # (Optional) FIFO message group ID. Default: null
+#       eventbridge_parameters:              # (Optional) EventBridge PutEvents target parameters. Default: null
+#         detail_type: "MaintenanceJob"      # (Required if block is set) Event detail type.
+#         source: "custom.maintenance"       # (Required if block is set) Event source.
+#       kinesis_parameters:                  # (Optional) Kinesis target parameters. Default: null
+#         partition_key: "maintenance"       # (Required if block is set) Kinesis partition key.
+#       ecs_parameters:                      # (Optional) ECS RunTask target parameters. Default: null
+#         task_definition_arn: "arn:aws:ecs:...:task-definition/job:1" # (Required if block is set) Task definition ARN.
+#         launch_type: "FARGATE"             # (Optional) Valid values: EC2 | FARGATE | EXTERNAL. Default: null
+#         task_count: 1                      # (Optional) Number of tasks. Valid range: 1-10. Default: 1
+#         network_configuration:             # (Optional) ECS task networking. Default: null
+#           assign_public_ip: false          # (Optional) Assign a public IP for Fargate. Default: false
+#           security_groups: []              # (Optional) Security group IDs, 1-5 values. Default: []
+#           subnets: []                      # (Optional) Subnet IDs, 1-16 values. Default: []
+#       sagemaker_pipeline_parameters:       # (Optional) SageMaker pipeline target parameters. Default: null
+#         pipeline_parameter: []             # (Optional) List of name/value parameters, up to 200. Default: []
+```
+
+Generated `terragrunt.hcl` wiring `inputs.yaml` into module inputs:
 
 ```hcl
+locals {
+  local_vars  = yamldecode(file("./inputs.yaml"))
+  spoke_vars  = yamldecode(file(find_in_parent_folders("spoke-inputs.yaml")))
+  region_vars = yamldecode(file(find_in_parent_folders("region-inputs.yaml")))
+  env_vars    = yamldecode(file(find_in_parent_folders("env-inputs.yaml")))
+  global_vars = yamldecode(file(find_in_parent_folders("global-inputs.yaml")))
+
+  local_tags  = jsondecode(file("./local-tags.json"))
+  spoke_tags  = jsondecode(file(find_in_parent_folders("spoke-tags.json")))
+  region_tags = jsondecode(file(find_in_parent_folders("region-tags.json")))
+  env_tags    = jsondecode(file(find_in_parent_folders("env-tags.json")))
+  global_tags = jsondecode(file(find_in_parent_folders("global-tags.json")))
+
+  tags = merge(
+    local.global_tags,
+    local.env_tags,
+    local.region_tags,
+    local.spoke_tags,
+    local.local_tags
+  )
+}
+
+include "root" {
+  path = find_in_parent_folders("terragrunt.hcl")
+}
+
 terraform {
-  source = "git::https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management.git//?ref=vX.Y.Z"
+  source = "github.com/cloudopsworks/terraform-module-aws-eventbridge-management"
 }
 
 inputs = {
-  # -- Core variables (from variables.tf)
-  is_hub    = false                                       # (Optional) Is this a hub deployment? Default: false
-  spoke_def = "001"                                       # (Optional) 3-digit spoke identifier as string (000-999). Default: "001"
-
-  org = {                                                 # (Required) Organization details used for naming/tags
-    organization_name = "acme"                           # (Required) Org/company name
-    organization_unit = "platform"                       # (Required) Business unit or tribe
-    environment_type  = "prod"                           # (Required) Environment type: dev|stg|prod|sandbox|... (free-form)
-    environment_name  = "primary"                        # (Required) Environment name: e.g., eu-west-1a|blue|shared
-  }
-
-  extra_tags = {                                          # (Optional) Extra tags added to all resources. Default: {}
-    Owner = "team-platform"
-  }
-
-  # -- EventBridge encryption (from variables-eventbridge.tf)
-  encryption = {                                          # (Optional) Global KMS settings applied when enabled=true. Default: {}
-    enabled         = false                               # (Optional) Create and use module-managed KMS key for buses/logs. Default: false
-    deletion_window = 30                                  # (Optional) KMS key deletion window in days. Allowed: 7-30. Default: 30
-    key_rotation    = true                                # (Optional) Enable KMS rotation. Default: true
-    rotation_period = 90                                  # (Optional) Rotation period in days (if supported). Default: 90
-    multi_region    = false                               # (Optional) Multi-Region KMS key. Default: false
-  }
-
-  # -- Event buses map (keys become part of names)
-  event_buses = {                                         # (Optional) Map of bus configs. Default: {}
-    core = {                                              # (Required for custom buses) Arbitrary key; name => core-<sys>-event-bus
-      kms_key_arn     = null                              # (Optional) Existing KMS ARN (ignored if encryption.enabled=true)
-      kms_key_id      = null                              # (Optional) Existing KMS ID  (ignored if encryption.enabled=true)
-      dead_letter_sqs = null                              # (Optional) SNS topic ARN for dead-lettering. Default: null
-      logs = {                                            # (Optional) EventBridge logging config. Default: {FULL/ERROR}
-        include_detail = "FULL"                           # (Optional) Allowed: FULL|BASIC. Default: FULL
-        level          = "ERROR"                          # (Optional) Allowed: ERROR|INFO|TRACE. Default: ERROR
-      }
-      log_retention   = 7                                  # (Optional) Log group retention in days (1,3,5,7,14,30,90,120,180,365,...). Default: 7
-      log_kms_key_arn = null                              # (Optional) KMS ARN for log group (ignored if encryption.enabled=true)
-      log_kms_key_id  = null                              # (Optional) KMS ID  for log group (ignored if encryption.enabled=true)
-      tags = {                                            # (Optional) Per-bus extra tags. Default: {}
-        Purpose = "events"
-      }
-    }
-  }
-
-  # -- Rules and targets
-  configs = {                                             # (Optional) Map of rule definitions. Default: {}
-    ec2-state = {
-      description   = "React to EC2 state changes"        # (Optional) Defaults to "Event Rule for <key>"
-      event_bus_ref = "core"                              # (Optional) Ref to event_buses key; default EventBridge "default" if omitted
-      event_pattern = {                                   # (Required if schedule unset) Standard EventBridge pattern
-        source       = ["aws.ec2"]
-        detail-type  = ["EC2 Instance State-change Notification"]
-        detail = {
-          state = ["stopped", "terminated"]
-        }
-      }
-      # schedule       = "rate(5 minutes)"                 # (Required if event_pattern unset) cron(...) or rate(...)
-      state          = true                                # (Optional) true=>ENABLED, false=>DISABLED. Default: true
-      tags          = { Purpose = "ops" }                 # (Optional)
-
-      targets = [                                         # (Optional) List of targets; supported type: "ssm"
-        {
-          type       = "ssm"                              # (Required) Target type
-          target_id  = "terminate-by-tag"                 # (Required) Unique within the rule
-          document_type = "Command"                       # (Optional) Common: Command|Automation. Default: Command
-          version  = null                             # (Optional) SSM document version name. Default: null
-          content = {                                     # (Required) SSM document content
-            schemaVersion = "2.2"
-            description   = "Terminate instances by tag"
-            mainSteps = [{
-              action = "aws:runShellScript"
-              name   = "terminate"
-              inputs = { runCommand = ["#!/bin/bash", "echo terminating"] }
-            }]
-          }
-          run_command_targets = [                         # (Optional) EC2 selection via Run Command Targeting
-            { key = "tag:Terminate", values = ["true"] }
-          ]
-          tags = { Name = "terminate-by-tag" }           # (Optional) Tags for created SSM Document
-        }
-      ]
-    }
-  }
+  is_hub           = false
+  org              = local.env_vars.org
+  spoke_def        = local.spoke_vars.spoke
+  encryption       = try(local.local_vars.encryption, {})
+  event_buses      = try(local.local_vars.event_buses, {})
+  configs          = try(local.local_vars.configs, {})
+  scheduler_groups = try(local.local_vars.scheduler_groups, {})
+  schedulers       = try(local.local_vars.schedulers, {})
+  extra_tags       = local.tags
 }
 ```
 
 ## Quick Start
 
-1. Create a Terragrunt directory and configure your AWS provider as usual (e.g., via environment variables or a root `provider` block).
-2. Add a `terragrunt.hcl` using the module source and pass at least the `org` object in `inputs`.
-3. Optionally, define `event_buses` to create custom buses and `configs` to add rules/targets.
-4. Run:
-
-   ```bash
-   terragrunt init
-   terragrunt plan
-   terragrunt apply
-   ```
+1. Create the target Terragrunt deployment directory and run `terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-eventbridge-management` from inside it.
+2. Edit the generated `inputs.yaml`; provide `configs` for EventBridge Rules, `scheduler_groups` and `schedulers` for EventBridge Scheduler resources, or both.
+3. Ensure any Scheduler `target.role_arn` trusts `scheduler.amazonaws.com` and can invoke the target service.
+4. Run `terragrunt plan`, review the EventBridge buses/rules/targets and Scheduler groups/schedules, then run `terragrunt apply`.
 
 
 ## Examples
 
-Minimal Terragrunt using default EventBridge bus and a scheduled rule:
+Minimal schedule on the AWS default EventBridge bus using an EventBridge Rule:
 
-```hcl
-terraform {
-  source = "git::https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management.git//?ref=vX.Y.Z"
-}
-
-inputs = {
-  org = {
-    organization_name = "acme"
-    organization_unit = "platform"
-    environment_type  = "dev"
-    environment_name  = "sandbox"
-  }
-
-  configs = {
-    heartbeat = {
-      schedule = "rate(10 minutes)"
-      targets  = []
-    }
-  }
-}
+```yaml
+configs:
+  heartbeat:
+    schedule: "rate(10 minutes)"
+    targets: []
 ```
 
-Advanced Terragrunt with custom bus, KMS, per-bus logging, and SSM target:
+Custom event bus with an SSM RunCommand target:
 
-```hcl
-terraform {
-  source = "git::https://github.com/cloudopsworks/terraform-module-aws-eventbridge-management.git//?ref=vX.Y.Z"
-}
+```yaml
+event_buses:
+  secops:
+    logs:
+      include_detail: "FULL"
+      level: "INFO"
+    log_retention: 14
 
-inputs = {
-  org = {
-    organization_name = "acme"
-    organization_unit = "secops"
-    environment_type  = "prod"
-    environment_name  = "primary"
-  }
+encryption:
+  enabled: true
 
-  encryption = { enabled = true }
+configs:
+  ec2-state:
+    event_bus_ref: "secops"
+    event_pattern:
+      source: ["aws.ec2"]
+      detail-type: ["EC2 Instance State-change Notification"]
+      detail:
+        state: ["stopped"]
+    targets:
+      - type: "ssm"
+        target_id: "notify"
+        document_type: "Command"
+        content:
+          schemaVersion: "2.2"
+          description: "Echo message"
+          mainSteps:
+            - action: "aws:runShellScript"
+              name: "echo"
+              inputs:
+                runCommand:
+                  - "#!/bin/bash"
+                  - "echo hello"
+```
 
-  event_buses = {
-    secops = {
-      logs = { include_detail = "FULL", level = "INFO" }
-      log_retention = 14
-    }
-  }
+EventBridge Scheduler group and universal SQS target schedule:
 
-  configs = {
-    ec2-state = {
-      event_bus_ref = "secops"
-      event_pattern = {
-        source = ["aws.ec2"]
-        detail-type = ["EC2 Instance State-change Notification"]
-        detail = { state = ["stopped"] }
-      }
-      targets = [{
-        type      = "ssm"
-        target_id = "notify"
-        document_type = "Command"
-        version  = null
-        content = {
-          schemaVersion = "2.2"
-          description = "Echo message"
-          mainSteps = [{
-            action = "aws:runShellScript"
-            name   = "echo"
-            inputs = { runCommand = ["#!/bin/bash", "echo hello"] }
-          }]
-        }
-      }]
-    }
-  }
-}
+```yaml
+scheduler_groups:
+  ops:
+    tags:
+      Purpose: "scheduled-jobs"
+
+schedulers:
+  nightly-maintenance:
+    description: "Send a nightly SQS maintenance message"
+    group_ref: "ops"
+    schedule_expression: "cron(0 2 * * ? *)"
+    schedule_expression_timezone: "UTC"
+    flexible_time_window:
+      mode: "OFF"
+    target:
+      arn: "arn:aws:scheduler:::aws-sdk:sqs:sendMessage"
+      role_arn: "arn:aws:iam::123456789012:role/eventbridge-scheduler-sqs"
+      input:
+        QueueUrl: "https://sqs.us-east-1.amazonaws.com/123456789012/maintenance"
+        MessageBody: "nightly-maintenance"
+      retry_policy:
+        maximum_event_age_in_seconds: 3600
+        maximum_retry_attempts: 3
 ```
 
 
@@ -267,13 +334,13 @@ Available targets:
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.4 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.35 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.4 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.55.0 |
 
 ## Modules
 
@@ -302,6 +369,8 @@ Available targets:
 | [aws_iam_role_policy.ssm_lifecycle_dlq](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_kms_alias.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias) | resource |
 | [aws_kms_key.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
+| [aws_scheduler_schedule.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/scheduler_schedule) | resource |
+| [aws_scheduler_schedule_group.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/scheduler_schedule_group) | resource |
 | [aws_ssm_document.ssm_doc](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_document) | resource |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.logs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -320,11 +389,25 @@ Available targets:
 | <a name="input_extra_tags"></a> [extra\_tags](#input\_extra\_tags) | Extra tags to add to the resources | `map(string)` | `{}` | no |
 | <a name="input_is_hub"></a> [is\_hub](#input\_is\_hub) | Is this a hub or spoke configuration? | `bool` | `false` | no |
 | <a name="input_org"></a> [org](#input\_org) | Organization details | <pre>object({<br/>    organization_name = string<br/>    organization_unit = string<br/>    environment_type  = string<br/>    environment_name  = string<br/>  })</pre> | n/a | yes |
+| <a name="input_scheduler_groups"></a> [scheduler\_groups](#input\_scheduler\_groups) | A map of EventBridge Scheduler schedule group configurations. | `any` | `{}` | no |
+| <a name="input_schedulers"></a> [schedulers](#input\_schedulers) | A map of EventBridge Scheduler schedule configurations. | `any` | `{}` | no |
 | <a name="input_spoke_def"></a> [spoke\_def](#input\_spoke\_def) | Spoke ID Number, must be a 3 digit number | `string` | `"001"` | no |
 
 ## Outputs
 
-No outputs.
+| Name | Description |
+|------|-------------|
+| <a name="output_event_bus_arns"></a> [event\_bus\_arns](#output\_event\_bus\_arns) | ARNs of EventBridge event buses created by this module, keyed by event\_buses key. |
+| <a name="output_event_bus_names"></a> [event\_bus\_names](#output\_event\_bus\_names) | Names of EventBridge event buses created by this module, keyed by event\_buses key. |
+| <a name="output_event_rule_arns"></a> [event\_rule\_arns](#output\_event\_rule\_arns) | ARNs of EventBridge rules created by this module, keyed by configs key. |
+| <a name="output_event_rule_names"></a> [event\_rule\_names](#output\_event\_rule\_names) | Names of EventBridge rules created by this module, keyed by configs key. |
+| <a name="output_kms_key_arn"></a> [kms\_key\_arn](#output\_kms\_key\_arn) | ARN of the module-managed KMS key when encryption.enabled is true; null when no module-managed key is created. |
+| <a name="output_scheduler_group_arns"></a> [scheduler\_group\_arns](#output\_scheduler\_group\_arns) | ARNs of EventBridge Scheduler schedule groups created by this module, keyed by scheduler\_groups key. |
+| <a name="output_scheduler_group_names"></a> [scheduler\_group\_names](#output\_scheduler\_group\_names) | Names of EventBridge Scheduler schedule groups created by this module, keyed by scheduler\_groups key. |
+| <a name="output_scheduler_schedule_arns"></a> [scheduler\_schedule\_arns](#output\_scheduler\_schedule\_arns) | ARNs of EventBridge Scheduler schedules created by this module, keyed by schedulers key. |
+| <a name="output_scheduler_schedule_names"></a> [scheduler\_schedule\_names](#output\_scheduler\_schedule\_names) | Names of EventBridge Scheduler schedules created by this module, keyed by schedulers key. |
+| <a name="output_ssm_document_arns"></a> [ssm\_document\_arns](#output\_ssm\_document\_arns) | ARNs of SSM documents created for EventBridge SSM targets, keyed by rule and target. |
+| <a name="output_ssm_document_names"></a> [ssm\_document\_names](#output\_ssm\_document\_names) | Names of SSM documents created for EventBridge SSM targets, keyed by rule and target. |
 
 
 

@@ -1,1 +1,99 @@
 # Module configuration
+
+encryption: {} # (Optional) Global KMS settings applied when enabled=true. Default: {}
+# encryption:
+#   enabled: false        # (Optional) Enable module-managed KMS for EventBridge buses, logs, and Scheduler schedules. Default: false
+#   deletion_window: 30   # (Optional) KMS key deletion window in days. Allowed values: 7-30. Default: 30
+#   key_rotation: true    # (Optional) Enable automatic key rotation. Default: true
+#   rotation_period: 90   # (Optional) Rotation period in days when supported by AWS. Default: 90
+#   multi_region: false   # (Optional) Create a multi-Region KMS key. Default: false
+
+event_buses: {} # (Optional) Map of EventBridge custom event bus definitions. Default: {}
+# event_buses:
+#   core:                                      # (Required for custom buses) Arbitrary key; name becomes core-<system_name_short>-event-bus.
+#     kms_key_arn: null                       # (Optional) Existing KMS key ARN for this bus; ignored if encryption.enabled=true. Default: null
+#     kms_key_id: null                        # (Optional) Existing KMS key ID for this bus; ignored if encryption.enabled=true. Default: null
+#     dead_letter_sqs: null                   # (Optional) Dead-letter SQS queue ARN for failed event deliveries. Default: null
+#     logs:                                   # (Optional) EventBridge logging configuration. Default: include_detail=FULL, level=ERROR
+#       include_detail: "FULL"                # (Optional) Valid values: FULL | BASIC. Default: FULL
+#       level: "ERROR"                        # (Optional) Valid values: ERROR | INFO | TRACE. Default: ERROR
+#     log_retention: 7                        # (Optional) CloudWatch Log Group retention in days. Default: 7
+#     log_kms_key_arn: null                   # (Optional) Existing KMS ARN for this bus log group; ignored if encryption.enabled=true. Default: null
+#     log_kms_key_id: null                    # (Optional) Existing KMS key ID for this bus log group; ignored if encryption.enabled=true. Default: null
+#     tags: {}                                # (Optional) Extra tags merged into this bus resources. Default: {}
+
+configs: {} # (Optional) Map of EventBridge Rule definitions and targets. Default: {}
+# configs:
+#   ec2-state:                                # (Required for rules) Arbitrary key; name becomes ec2-state-<system_name_short>-rule.
+#     description: "React to EC2 state changes" # (Optional) Rule description. Default: Event Rule for <rule_key>
+#     event_bus_ref: "core"                  # (Optional) Key from event_buses. Default: AWS default event bus
+#     event_pattern:                          # (Required if schedule unset) EventBridge event pattern object or JSON string.
+#       source: ["aws.ec2"]                  # (Optional) Example event source matcher.
+#       detail-type: ["EC2 Instance State-change Notification"] # (Optional) Example event detail-type matcher.
+#       detail:                               # (Optional) Example event detail matcher.
+#         state: ["stopped", "terminated"]
+#     schedule: null                          # (Required if event_pattern unset) EventBridge Rule schedule expression: cron(...) or rate(...). Default: null
+#     state: true                             # (Optional) true enables the rule, false disables it. Default: true
+#     tags: {}                                # (Optional) Extra tags for this rule. Default: {}
+#     targets:                                # (Optional) List of targets for this rule. Default: []
+#       - type: "ssm"                         # (Required) Target type. Supported values: ssm
+#         target_id: "terminate-by-tag"       # (Required) Unique target ID within the rule.
+#         document_type: "Command"            # (Optional) SSM Document type. Valid values include Command | Automation. Default: Command
+#         version: null                       # (Optional) SSM Document version name. Default: null
+#         format: "JSON"                      # (Optional) SSM Document format. Valid values: JSON | YAML | TEXT. Default: JSON
+#         content: {}                         # (Required for ssm) SSM Document content as object or string.
+#         dead_letter_sqs: null               # (Optional) SQS DLQ ARN for EventBridge target delivery failures. Default: null
+#         run_command_targets: []             # (Optional) EC2 Run Command target selectors. Default: []
+#         # run_command_targets:
+#         #   - key: "tag:Terminate"          # (Required if item is set) Target selector key, e.g. InstanceIds or tag:<Name>.
+#         #     values: ["true"]              # (Required if item is set) Target selector values.
+#         tags: {}                            # (Optional) Tags for the created SSM Document. Default: {}
+
+scheduler_groups: {} # (Optional) Map of EventBridge Scheduler schedule group definitions. Default: {}
+# scheduler_groups:
+#   ops:                                      # (Required for groups) Arbitrary key used by schedulers.*.group_ref.
+#     name: null                             # (Optional) Explicit schedule group name. Default: ops-<system_name_short>-scheduler-group
+#     tags: {}                               # (Optional) Extra tags merged into the schedule group. Default: {}
+
+schedulers: {} # (Optional) Map of EventBridge Scheduler schedule definitions. Default: {}
+# schedulers:
+#   nightly-maintenance:                     # (Required for schedules) Arbitrary key used in naming and outputs.
+#     name: null                             # (Optional) Explicit schedule name. Default: nightly-maintenance-<system_name_short>-scheduler
+#     description: "Run nightly maintenance" # (Optional) Schedule description. Default: EventBridge Scheduler schedule for <schedule_key>
+#     group_ref: "ops"                       # (Optional) Key from scheduler_groups. Use this for module-managed groups. Default: null
+#     group_name: null                       # (Optional) Existing Scheduler group name. Default: default when group_ref is unset
+#     schedule_expression: "cron(0 2 * * ? *)" # (Required) Schedule expression: at(...), rate(...), or cron(...).
+#     schedule_expression_timezone: "UTC"    # (Optional) IANA timezone for schedule_expression evaluation. Default: UTC
+#     state: true                            # (Optional) true/ENABLED enables, false/DISABLED disables. Default: true
+#     start_date: null                       # (Optional) UTC timestamp after which recurring schedules can start. Default: null
+#     end_date: null                         # (Optional) UTC timestamp before which recurring schedules can invoke. Default: null
+#     action_after_completion: null          # (Optional) Valid values: NONE | DELETE. Default: provider default NONE
+#     kms_key_arn: null                      # (Optional) Customer-managed KMS key ARN; ignored if encryption.enabled=true. Default: null
+#     flexible_time_window:                  # (Optional) Invocation time window. Default: mode=OFF
+#       mode: "OFF"                          # (Optional) Valid values: OFF | FLEXIBLE. Default: OFF
+#       maximum_window_in_minutes: null      # (Optional) Required when mode=FLEXIBLE. Valid range: 1-1440. Default: null
+#     target:                                # (Required) Target invoked by Scheduler.
+#       arn: "arn:aws:scheduler:::aws-sdk:sqs:sendMessage" # (Required) Target ARN or universal target service ARN.
+#       role_arn: "arn:aws:iam::123456789012:role/scheduler-exec" # (Required) Execution role ARN trusted by scheduler.amazonaws.com.
+#       input: {}                            # (Optional) String or object JSON payload. Default: null
+#       dead_letter_sqs: null                # (Optional) SQS DLQ ARN shorthand. Default: null
+#       retry_policy:                        # (Optional) Retry behavior. Default: AWS provider defaults
+#         maximum_event_age_in_seconds: 86400 # (Optional) Valid range: 60-86400. Default: 86400
+#         maximum_retry_attempts: 185        # (Optional) Valid range: 0-185. Default: 185
+#       sqs_parameters:                      # (Optional) SQS target parameters. Default: null
+#         message_group_id: null             # (Optional) FIFO message group ID. Default: null
+#       eventbridge_parameters:              # (Optional) EventBridge PutEvents target parameters. Default: null
+#         detail_type: "MaintenanceJob"      # (Required if block is set) Event detail type.
+#         source: "custom.maintenance"       # (Required if block is set) Event source.
+#       kinesis_parameters:                  # (Optional) Kinesis target parameters. Default: null
+#         partition_key: "maintenance"       # (Required if block is set) Kinesis partition key.
+#       ecs_parameters:                      # (Optional) ECS RunTask target parameters. Default: null
+#         task_definition_arn: "arn:aws:ecs:...:task-definition/job:1" # (Required if block is set) Task definition ARN.
+#         launch_type: "FARGATE"             # (Optional) Valid values: EC2 | FARGATE | EXTERNAL. Default: null
+#         task_count: 1                      # (Optional) Number of tasks. Valid range: 1-10. Default: 1
+#         network_configuration:             # (Optional) ECS task networking. Default: null
+#           assign_public_ip: false          # (Optional) Assign a public IP for Fargate. Default: false
+#           security_groups: []              # (Optional) Security group IDs, 1-5 values. Default: []
+#           subnets: []                      # (Optional) Subnet IDs, 1-16 values. Default: []
+#       sagemaker_pipeline_parameters:       # (Optional) SageMaker pipeline target parameters. Default: null
+#         pipeline_parameter: []             # (Optional) List of name/value parameters, up to 200. Default: []
